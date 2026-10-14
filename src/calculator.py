@@ -40,12 +40,24 @@ def _get_inputs(args, kwargs, names):
 
 
 
+
 def _positive_number(name, value):
     """Validate a finite positive number."""
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ValueError(f"{name} must be a number.")
-    if not math.isfinite(value) or value <= 0:
-        raise ValueError(f"{name} must be finite and greater than zero.")
+
+    try:
+        is_finite = math.isfinite(value)
+    except OverflowError:
+        raise ValueError(
+            f"{name} must be finite and greater than zero."
+        ) from None
+
+    if not is_finite or value <= 0:
+        raise ValueError(
+            f"{name} must be finite and greater than zero."
+        )
+
 
 
 def calculate_total_rack_load(*args, **kwargs):

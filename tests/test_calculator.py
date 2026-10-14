@@ -269,6 +269,11 @@ class TestDataCenterCalculator(unittest.TestCase):
                 unexpected_input=5,
             )
 
+    def test_extremely_large_voltage_is_rejected_cleanly(self):
+        with self.assertRaises(ValueError):
+            calculate_nominal_circuit_capacity(
+                10**10000, 30, "three_phase"
+            )
 
 if __name__ == "__main__":
     unittest.main()
