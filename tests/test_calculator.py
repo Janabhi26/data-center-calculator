@@ -275,5 +275,40 @@ class TestDataCenterCalculator(unittest.TestCase):
                 10**10000, 30, "three_phase"
             )
 
+    def test_extremely_large_base_footage_is_rejected_cleanly(self):
+     with self.assertRaises(ValueError):
+        calculate_total_conductor_footage(10**10000, 0.10)    
+
+    def test_overflowing_total_rack_load_is_rejected(self):
+      with self.assertRaises(ValueError):
+        calculate_total_rack_load(10**308, 1e308)        
+    
+
+    def test_nominal_capacity_overflow_is_rejected(self):
+        with self.assertRaises(ValueError):
+            calculate_nominal_circuit_capacity(
+                1e308, 1e308, "single_phase"
+            )
+
+    
+    def test_usable_capacity_overflow_is_rejected(self):
+        with self.assertRaises(ValueError):
+            calculate_usable_circuit_capacity(1e308, 1.0 + 1e-15)
+
+
+    def test_required_circuits_overflow_is_rejected(self):
+        with self.assertRaises(ValueError):
+            calculate_required_circuits(1e308, 1e-308)
+
+    def test_base_footage_overflow_is_rejected(self):
+        with self.assertRaises(ValueError):
+            calculate_base_conductor_footage(
+                10**100, 1e308, 4
+            )
+
+    def test_total_footage_overflow_is_rejected(self):
+        with self.assertRaises(ValueError):
+            calculate_total_conductor_footage(1e308, 1.0)
+
 if __name__ == "__main__":
     unittest.main()

@@ -8,7 +8,6 @@ Engineering assumptions must be reviewed before production use.
 import math
 
 
-
 def _get_inputs(args, kwargs, names):
     """Read inputs supplied positionally or by keyword."""
     if args and kwargs:
@@ -39,25 +38,44 @@ def _get_inputs(args, kwargs, names):
     return tuple(kwargs[name] for name in names)
 
 
-
-
 def _positive_number(name, value):
     """Validate a finite positive number."""
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ValueError(f"{name} must be a number.")
 
     try:
-        is_finite = math.isfinite(value)
+        valid = math.isfinite(value) and value > 0
     except OverflowError:
-        raise ValueError(
-            f"{name} must be finite and greater than zero."
-        ) from None
+        valid = False
 
-    if not is_finite or value <= 0:
-        raise ValueError(
-            f"{name} must be finite and greater than zero."
-        )
+    if not valid:
+        raise ValueError(f"{name} must be finite and greater than zero.")
 
+
+def _finite_result(name, result):
+    """Reject calculation results that are not finite numbers."""
+    if isinstance(result, bool) or not isinstance(result, (int, float)):
+        raise ValueError(f"{name} must be a finite number.")
+
+    try:
+        valid = math.isfinite(result)
+    except OverflowError:
+        valid = False
+
+    if not valid:
+        raise ValueError(f"{name} must be a finite number.")
+
+    return result
+
+
+def _calculate_finite(name, calculation):
+    """Run a calculation and normalize arithmetic overflow to ValueError."""
+    try:
+        result = calculation()
+    except (OverflowError, ZeroDivisionError):
+        raise ValueError(f"{name} is outside the supported numeric range.") from None
+
+    return _finite_result(name, result)
 
 
 def calculate_total_rack_load(*args, **kwargs):
@@ -72,7 +90,9 @@ def calculate_total_rack_load(*args, **kwargs):
         raise ValueError("rack_count must be greater than zero.")
 
     _positive_number("load_per_rack", load_per_rack)
-    return rack_count * load_per_rack
+    return _calculate_finite(
+        "total_rack_load", lambda: rack_count * load_per_rack
+    )
 
 
 def calculate_nominal_circuit_capacity(*args, **kwargs):
@@ -88,10 +108,16 @@ def calculate_nominal_circuit_capacity(*args, **kwargs):
     _positive_number("breaker_rating", breaker_rating)
 
     if phase == "single_phase":
-        return voltage * breaker_rating / 1000
+        return _calculate_finite(
+            "nominal_circuit_capacity",
+            lambda: voltage * breaker_rating / 1000,
+        )
 
     if phase == "three_phase":
-        return math.sqrt(3) * voltage * breaker_rating / 1000
+        return _calculate_finite(
+            "nominal_circuit_capacity",
+            lambda: math.sqrt(3) * voltage * breaker_rating / 1000,
+        )
 
     raise ValueError("phase must be 'single_phase' or 'three_phase'.")
 
@@ -108,7 +134,10 @@ def calculate_usable_circuit_capacity(*args, **kwargs):
     if loading_factor > 1:
         raise ValueError("loading_factor must not exceed 1.")
 
-    return nominal_capacity * loading_factor
+    return _calculate_finite(
+        "usable_circuit_capacity",
+        lambda: nominal_capacity * loading_factor,
+    )
 
 
 def calculate_required_circuits(*args, **kwargs):
@@ -120,11 +149,21 @@ def calculate_required_circuits(*args, **kwargs):
     _positive_number("total_load", total_load)
     _positive_number("usable_capacity", usable_capacity)
 
-    return math.ceil(total_load / usable_capacity)
+    ratio = _calculate_finite(
+        "required_circuits_ratio",
+        lambda: total_load / usable_capacity,
+    )
+
+    try:
+        return math.ceil(ratio)
+    except (OverflowError, ValueError):
+        raise ValueError(
+            "required circuit count is outside the supported numeric range."
+        ) from None
 
 
 def calculate_base_conductor_footage(*args, **kwargs):
-    """Return conductor footage before waste allowance."""
+    """Return conductor footage before waste allowance, in feet."""
     circuit_count, average_run_length, conductors_per_circuit = _get_inputs(
         args,
         kwargs,
@@ -147,7 +186,10 @@ def calculate_base_conductor_footage(*args, **kwargs):
     ):
         raise ValueError("conductors_per_circuit must be a positive integer.")
 
-    return circuit_count * average_run_length * conductors_per_circuit
+    return _calculate_finite(
+        "base_conductor_footage",
+        lambda: circuit_count * average_run_length * conductors_per_circuit,
+    )
 
 
 def calculate_total_conductor_footage(*args, **kwargs):
@@ -162,17 +204,36 @@ def calculate_total_conductor_footage(*args, **kwargs):
     if (
         isinstance(base_footage, bool)
         or not isinstance(base_footage, (int, float))
-        or not math.isfinite(base_footage)
         or base_footage < 0
     ):
+        raise ValueError("base_footage must be finite and non-negative.")
+
+    try:
+        finite_base = math.isfinite(base_footage)
+    except OverflowError:
+        finite_base = False
+
+    if not finite_base:
         raise ValueError("base_footage must be finite and non-negative.")
 
     if (
         isinstance(waste_allowance, bool)
         or not isinstance(waste_allowance, (int, float))
-        or not math.isfinite(waste_allowance)
-        or not 0 <= waste_allowance <= 1
     ):
         raise ValueError("waste_allowance must be between 0 and 1.")
 
-    return base_footage * (1 + waste_allowance)
+    try:
+        valid_waste = (
+            math.isfinite(waste_allowance)
+            and 0 <= waste_allowance <= 1
+        )
+    except OverflowError:
+        valid_waste = False
+
+    if not valid_waste:
+        raise ValueError("waste_allowance must be between 0 and 1.")
+
+    return _calculate_finite(
+        "total_conductor_footage",
+        lambda: base_footage * (1 + waste_allowance),
+    )
